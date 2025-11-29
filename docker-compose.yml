@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  backend:
+    build: .
+    container_name: bot-gpt-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - DEBUG=True
+    volumes:
+      - ./app:/app/app
+      - ./main.py:/app/main.py
+    depends_on:
+      - mongodb
+    restart: unless-stopped
+    networks:
+      - bot-gpt-network
+
+  # MongoDB (for local development/testing)
+  mongodb:
+    image: mongo:7.0
+    container_name: bot-gpt-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - bot-gpt-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  bot-gpt-network:
+    driver: bridge
