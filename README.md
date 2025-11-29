@@ -673,16 +673,6 @@ bot-gpt-backend/
 
 ---
 
-## 🎓 What I Learned
-
-1. **Async Python**: FastAPI's async/await, background tasks
-2. **Vector RAG**: Embeddings, cosine similarity, retrieval
-3. **Production Practices**: Docker, CI/CD, testing, logging
-4. **LLM Integration**: Context management, token optimization
-5. **MongoDB**: Document modeling, indexing, async operations
-6. **Memory Management**: Background processing, disk-based storage
-
----
 
 ## 📞 Contact
 
