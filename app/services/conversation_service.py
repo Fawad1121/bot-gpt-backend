@@ -163,22 +163,67 @@ class ConversationService:
         mode = conversation["mode"]
         
         if mode == "rag_mode":
-            # RAG mode: retrieve relevant chunks
+            # RAG mode: use vector similarity search
             document_ids = conversation.get("document_ids", [])
             
+            logger.info(f"RAG Mode: Processing with {len(document_ids)} documents")
+            
             if document_ids:
-                # Get documents and their chunks
+                # Check if all documents are vectorized
                 all_chunks = []
                 for doc_id in document_ids:
                     document = await db_service.get_document(doc_id)
-                    if document and document.get("chunks"):
-                        all_chunks.extend(document["chunks"])
+                    if not document:
+                        logger.warning(f"Document not found: {doc_id}")
+                        continue
+                    
+                    logger.info(f"Document {doc_id}: is_vectorized={document.get('is_vectorized', False)}, "
+                               f"total_chunks={document.get('total_chunks', 0)}, "
+                               f"vectorized_chunks={document.get('vectorized_chunks', 0)}")
+                    
+                    # Check vectorization status
+                    if not document.get("is_vectorized", False):
+                        raise ValueError(
+                            "Please try again after some time, we are processing your file. "
+                            "Document vectorization is in progress."
+                        )
+                    
+                    # Get vectorized chunks from chunks collection
+                    chunks_cursor = db_service.db.chunks.find({
+                        "document_id": doc_id,
+                        "is_vectorized": True
+                    })
+                    chunks = await chunks_cursor.to_list(length=None)
+                    
+                    logger.info(f"Retrieved {len(chunks)} vectorized chunks for document {doc_id}")
+                    
+                    if chunks:
+                        all_chunks.extend(chunks)
                 
-                # Retrieve relevant chunks
-                relevant_chunks = rag_service.retrieve_relevant_chunks(
-                    current_message,
+                logger.info(f"Total chunks retrieved: {len(all_chunks)}")
+                
+                if not all_chunks:
+                    raise ValueError("No vectorized chunks found in documents")
+                
+                # Generate query embedding
+                from app.services.embedding_service import embedding_service
+                logger.info(f"Generating query embedding for: {current_message[:100]}...")
+                query_embedding = embedding_service.generate_embedding(current_message)
+                logger.info(f"Query embedding generated: {len(query_embedding)} dimensions")
+                
+                # Find most similar chunks using vector similarity
+                relevant_chunks = rag_service.vector_similarity_search(
+                    query_embedding,
                     all_chunks
                 )
+                
+                logger.info(f"Selected {len(relevant_chunks)} most relevant chunks")
+                logger.info("=" * 80)
+                logger.info("CHUNKS BEING SENT TO LLM:")
+                for i, chunk in enumerate(relevant_chunks):
+                    logger.info(f"\n[Chunk {i+1}]")
+                    logger.info(f"Content: {chunk['content'][:200]}...")
+                logger.info("=" * 80)
                 
                 # Build conversation history
                 history = [
@@ -186,10 +231,22 @@ class ConversationService:
                     for msg in history_messages[-10:]  # Keep last 10 messages
                 ]
                 
-                # Create RAG messages
+                # Create RAG messages with relevant chunks
+                from app.models.document import DocumentChunk
+                chunk_objects = [
+                    DocumentChunk(
+                        chunk_id=c["chunk_id"],
+                        content=c["content"],
+                        start_char=c.get("start_char", 0),
+                        end_char=c.get("end_char", 0),
+                        tokens=c.get("tokens", 0)
+                    )
+                    for c in relevant_chunks
+                ]
+                
                 return rag_service.create_rag_messages(
                     current_message,
-                    relevant_chunks,
+                    chunk_objects,
                     history
                 )
         
@@ -218,7 +275,8 @@ class ConversationService:
     
     async def _get_message_dict(self, message_id: str) -> Dict[str, Any]:
         """Get message as dictionary"""
-        message = await db_service.db.messages.find_one({"_id": message_id})
+        from bson import ObjectId
+        message = await db_service.db.messages.find_one({"_id": ObjectId(message_id)})
         if message:
             message["_id"] = str(message["_id"])
             message["id"] = message["_id"]

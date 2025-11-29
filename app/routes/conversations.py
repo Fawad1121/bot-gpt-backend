@@ -38,19 +38,23 @@ async def create_conversation(conversation: ConversationCreate):
             document_ids=conversation.document_ids
         )
         
+        # Safety checks
+        if not user_msg or not assistant_msg:
+            raise ValueError("Failed to create messages")
+        
         return {
             "conversation_id": conv["_id"],
-            "title": conv["title"],
-            "mode": conv["mode"],
+            "title": conv.get("title", "Untitled"),
+            "mode": conv.get("mode", "open_chat"),
             "user_message": {
-                "id": user_msg["id"],
-                "content": user_msg["content"],
-                "timestamp": user_msg["timestamp"]
+                "id": user_msg.get("id", user_msg.get("_id")),
+                "content": user_msg.get("content", ""),
+                "timestamp": user_msg.get("timestamp")
             },
             "assistant_message": {
-                "id": assistant_msg["id"],
-                "content": assistant_msg["content"],
-                "timestamp": assistant_msg["timestamp"]
+                "id": assistant_msg.get("id", assistant_msg.get("_id")),
+                "content": assistant_msg.get("content", ""),
+                "timestamp": assistant_msg.get("timestamp")
             }
         }
     
@@ -61,15 +65,15 @@ async def create_conversation(conversation: ConversationCreate):
 
 @router.get("", response_model=dict)
 async def list_conversations(
-    user_id: str = Query(..., description="User ID"),
+    user_id: Optional[str] = Query(None, description="User ID (optional - leave empty to list all)"),
     limit: int = Query(20, ge=1, le=100, description="Number of conversations to return"),
     offset: int = Query(0, ge=0, description="Number of conversations to skip")
 ):
     """
-    List all conversations for a user
+    List conversations (optionally filtered by user)
     
     Args:
-        user_id: User ID
+        user_id: User ID (optional - if not provided, lists all conversations)
         limit: Maximum number of conversations to return
         offset: Number of conversations to skip (for pagination)
     

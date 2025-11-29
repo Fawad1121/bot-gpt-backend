@@ -20,53 +20,74 @@ async def upload_document(
     user_id: str = Form(...)
 ):
     """
-    Upload a document for RAG
+    Upload a document for RAG - saves to disk and starts background processing
     
     Args:
         file: Document file (text, PDF, etc.)
         user_id: User ID
     
     Returns:
-        Document ID and processing info
+        Document ID and file info
     """
     try:
-        # Read file content
+        import os
+        from pathlib import Path
+        from bson import ObjectId
+        from app.services.vectorization_queue import vectorization_queue
+        
+        # Generate document ID
+        document_id = str(ObjectId())
+        
+        # Create upload directory structure: uploads/{user_id}/{document_id}/
+        upload_dir = Path("uploads") / user_id / document_id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save file to disk
+        file_path = upload_dir / file.filename
+        
+        logger.info(f"Saving file to: {file_path}")
+        
+        # Read and save file
         content = await file.read()
+        file_size = len(content)
         
-        # Decode content (assuming text file for now)
-        try:
-            text_content = content.decode('utf-8')
-        except UnicodeDecodeError:
-            raise HTTPException(
-                status_code=400,
-                detail="Only UTF-8 text files are supported currently"
-            )
+        # Write to disk
+        with open(file_path, "wb") as f:
+            f.write(content)
         
-        # Chunk the document
-        chunks = rag_service.chunk_document(text_content, file.filename)
+        logger.info(f"File saved successfully: {file_path} ({file_size} bytes)")
         
-        # Create document in database
+        # Store document metadata (chunking will happen in background)
         document_data = {
+            "_id": ObjectId(document_id),
             "user_id": user_id,
             "filename": file.filename,
-            "content": text_content,
-            "chunks": [chunk.dict() for chunk in chunks],
-            "file_size": len(content),
-            "chunk_count": len(chunks),
+            "file_path": str(file_path),
+            "file_size": file_size,
+            "content_type": file.content_type,
+            "total_chunks": 0,  # Will be set after chunking
+            "vectorized_chunks": 0,
+            "is_vectorized": False,
             "metadata": {
-                "content_type": file.content_type,
-                "original_filename": file.filename
+                "original_filename": file.filename,
+                "upload_status": "completed",
+                "processing_status": "pending"  # chunking + vectorization
             }
         }
         
-        document_id = await db_service.create_document(document_data)
+        await db_service.db.documents.insert_one(document_data)
         
-        logger.info(f"Document '{file.filename}' uploaded successfully with {len(chunks)} chunks")
+        logger.info(f"Document metadata saved to DB with ID: {document_id}")
         
+        # Start background processing (chunking + vectorization)
+        vectorization_queue.start_vectorization(document_id)
+        logger.info(f"Started background processing for document: {document_id}")
+        
+        # Return immediately - processing happens in background
         return DocumentUploadResponse(
             document_id=document_id,
             filename=file.filename,
-            chunks=len(chunks)
+            chunks=0  # Will be set after chunking
         )
     
     except HTTPException:

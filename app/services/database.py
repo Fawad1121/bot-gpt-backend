@@ -57,6 +57,12 @@ class DatabaseService:
             
             # Documents indexes
             await cls.db.documents.create_index("user_id")
+            await cls.db.documents.create_index("is_vectorized")
+            
+            # Chunks indexes (NEW)
+            await cls.db.chunks.create_index("document_id")
+            await cls.db.chunks.create_index("is_vectorized")
+            await cls.db.chunks.create_index([("document_id", 1), ("is_vectorized", 1)])
             
             # Users indexes
             await cls.db.users.create_index("email", unique=True)
@@ -112,13 +118,16 @@ class DatabaseService:
     @classmethod
     async def list_conversations(
         cls, 
-        user_id: str, 
+        user_id: Optional[str] = None, 
         limit: int = 20, 
         offset: int = 0
     ) -> tuple[List[Dict[str, Any]], int]:
-        """List conversations for a user with pagination"""
-        cursor = cls.db.conversations.find({"user_id": user_id})
-        total = await cls.db.conversations.count_documents({"user_id": user_id})
+        """List conversations (optionally filtered by user) with pagination"""
+        # Build query filter
+        query_filter = {"user_id": user_id} if user_id else {}
+        
+        cursor = cls.db.conversations.find(query_filter)
+        total = await cls.db.conversations.count_documents(query_filter)
         
         conversations = await cursor.sort("updated_at", -1).skip(offset).limit(limit).to_list(length=limit)
         

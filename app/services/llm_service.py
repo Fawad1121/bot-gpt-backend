@@ -51,6 +51,16 @@ class LLMService:
         input_tokens = count_messages_tokens(truncated_messages)
         logger.info(f"Sending {len(truncated_messages)} messages ({input_tokens} tokens) to LLM")
         
+        # Print the final prompt being sent to LLM
+        logger.info("=" * 80)
+        logger.info("FINAL PROMPT SENT TO LLM:")
+        logger.info("=" * 80)
+        for i, msg in enumerate(truncated_messages):
+            logger.info(f"\n[Message {i+1}] Role: {msg['role']}")
+            logger.info(f"Content:\n{msg['content']}")  # Full content
+            logger.info("-" * 80)
+        logger.info("=" * 80)
+        
         # Retry logic
         for attempt in range(max_retries):
             try:

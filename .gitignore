@@ -52,6 +52,9 @@ htmlcov/
 
 # Logs
 *.log
+
+# Uploaded files
+uploads/
 logs/
 
 # Database
